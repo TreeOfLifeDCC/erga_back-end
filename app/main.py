@@ -146,6 +146,10 @@ async def root(index: str, offset: int = 0, limit: int = 15,
             {"wildcard": {"commonName": {"value": f"*{search}*",
                                          "case_insensitive": True}}}
         )
+        body["query"]["bool"]["must"]["bool"]["should"].append(
+            {"wildcard": {"symbionts_records.organism.text": {"value": f"*{search}*",
+                                         "case_insensitive": True}}}
+        )
     print(json.dumps(body))
     response = await es.search(
         index=index, sort=sort, from_=offset, size=limit, body=body
