@@ -42,9 +42,9 @@ async def summary():
 
 @app.get("/{index}")
 async def root(index: str, offset: int = 0, limit: int = 15,
-               sort: str = "rank:desc", filter: str | None = None,
-               search: str | None = None, current_class: str = 'kingdom',
-               phylogeny_filters: str | None = None):
+               sort: str = "rank:desc", filter: str = None,
+               search: str = None, current_class: str = 'kingdom',
+               phylogeny_filters: str = None):
     print(phylogeny_filters)
     # data structure for ES query
     body = dict()
