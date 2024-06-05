@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import json
 
-from constants import DATA_PORTAL_AGGREGATIONS
+from .constants import DATA_PORTAL_AGGREGATIONS
 
 app = FastAPI()
 
