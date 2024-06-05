@@ -151,9 +151,13 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                                          "case_insensitive": True}}}
         )
     print(json.dumps(body))
+    print('connection created ' +ES_HOST +ES_PASSWORD)
+    if not es.ping():
+        raise ValueError("Connection failed")
     response = await es.search(
         index=index, sort=sort, from_=offset, size=limit, body=body
     )
+    print('after call created ')
     data = dict()
     data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']
