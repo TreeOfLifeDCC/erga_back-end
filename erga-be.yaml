@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erga-be
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erga-be
+  template:
+    metadata:
+      labels:
+        app: erga-be
+    spec:
+      containers:
+      - image: eu.gcr.io/prj-ext-prod-erga-portal-dr/erga_back-end/erga-back-end:latest
+        imagePullPolicy: Always
+        name: erga-be
+        env:
+          - name: ES_HOST
+            value: null
+            valueFrom:
+              secretKeyRef:
+                name: erga-elasticsearch
+                key: host
+                optional: false
+          - name: ES_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: erga-elasticsearch
+                key: username
+                optional: false
+          - name: ES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: erga-elasticsearch
+                key: password
+                optional: false
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: gcp-cloud
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+
