@@ -34,7 +34,7 @@ es = AsyncElasticsearch(
 
 @app.get("/summary")
 async def summary():
-    response = await es.search(index="summary")
+    response = await es.search(index="summary", request_timeout=60)
     data = dict()
     data['results'] = response['hits']['hits']
     return data
@@ -152,7 +152,7 @@ async def root(index: str, offset: int = 0, limit: int = 15,
         )
     print(json.dumps(body))
     response = await es.search(
-        index=index, sort=sort, from_=offset, size=limit, body=body
+        index=index, sort=sort, from_=offset, size=limit, body=body, request_timeout=60
     )
     data = dict()
     data['count'] = response['hits']['total']['value']
@@ -167,9 +167,9 @@ async def details(index: str, record_id: str):
     if index == 'data_portal':
         body["query"] = {
             "bool": {"filter": [{'term': {'organism': record_id}}]}}
-        response = await es.search(index=index, body=body)
+        response = await es.search(index=index, body=body, request_timeout=60)
     else:
-        response = await es.search(index=index, q=f"_id:{record_id}")
+        response = await es.search(index=index, q=f"_id:{record_id}", request_timeout=60)
     data = dict()
     data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']
