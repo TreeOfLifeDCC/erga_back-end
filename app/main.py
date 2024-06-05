@@ -14,7 +14,7 @@ origins = [
     "*"
 ]
 
-ES_HOST = os.getenv('https://' + 'ES_HOST')
+ES_HOST = os.getenv('ES_HOST')
 ES_USERNAME = os.getenv('ES_USERNAME')
 ES_PASSWORD = os.getenv('ES_PASSWORD')
 
