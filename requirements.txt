@@ -1,4 +1,5 @@
 fastapi==0.73.0
 uvicorn==0.15.0
-elasticsearch[async]==7.17.0
+elasticsearch==7.10.0
+elasticsearch-async==6.2.0
 requests==2.27.1
