@@ -8,7 +8,8 @@ import json
 
 from .constants import DATA_PORTAL_AGGREGATIONS
 
-app = FastAPI()
+app = FastAPI(redoc_url=None,
+              openapi_url="/api/openapi.json", )
 
 origins = [
     "*"
@@ -148,7 +149,7 @@ async def root(index: str, offset: int = 0, limit: int = 15,
         )
         body["query"]["bool"]["must"]["bool"]["should"].append(
             {"wildcard": {"symbionts_records.organism.text": {"value": f"*{search}*",
-                                         "case_insensitive": True}}}
+                                                              "case_insensitive": True}}}
         )
     print(json.dumps(body))
     response = await es.search(
