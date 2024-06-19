@@ -8,7 +8,7 @@ import json
 
 from .constants import DATA_PORTAL_AGGREGATIONS
 
-app = FastAPI(openapi_url="/api/v1/openapi.json")
+app = FastAPI(openapi_url="/openapi.json")
 
 origins = [
     "*"
