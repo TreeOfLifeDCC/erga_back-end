@@ -8,9 +8,7 @@ import json
 
 from .constants import DATA_PORTAL_AGGREGATIONS
 
-app = FastAPI( openapi_url="/api/openapi.json",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
+app = FastAPI(
     root_path="/api")
 
 origins = [
@@ -33,6 +31,11 @@ es = AsyncElasticsearch(
     [ES_HOST], connection_class=AIOHttpConnection,
     http_auth=(ES_USERNAME, ES_PASSWORD),
     use_ssl=True, verify_certs=False)
+
+
+@app.get("/redoc", response_class=HTMLResponse)
+async def get_redoc(username: str = Depends(get_current_username)) -> HTMLResponse:
+    return get_redoc_html(openapi_url="/api/openapi.json", title="redoc")
 
 
 @app.get("/summary")
