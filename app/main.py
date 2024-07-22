@@ -32,7 +32,6 @@ es = AsyncElasticsearch(
     http_auth=(ES_USERNAME, ES_PASSWORD),
     use_ssl=True, verify_certs=False)
 
-
 @app.get("/downloader_utility_data/")
 async def downloader_utility_data(taxonomy_filter: str, data_status: str, experiment_type: str, project_name: str):
     body = dict()
@@ -148,7 +147,6 @@ async def downloader_utility_data_with_species(species_list: str, project_name: 
             result.extend(response['hits']['hits'])
 
     return result
-
 
 @app.get("/summary")
 async def summary():
