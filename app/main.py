@@ -293,7 +293,7 @@ async def export_csv(
 async def root(index: str, offset: int = 0, limit: int = 15,
                sort: str = "rank:desc", filter: str | None = None,
                search: str | None = None, current_class: str = 'kingdom',
-               phylogeny_filters: str | None = None):
+               phylogeny_filters: str | None = None, action: str = None):
     print(phylogeny_filters)
     # data structure for ES query
     body = dict()
@@ -400,9 +400,14 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                                                               "case_insensitive": True}}}
         )
     print(json.dumps(body))
-    response = await es.search(
-        index=index, sort=sort, from_=offset, size=limit, body=body
-    )
+
+    if action == 'download':
+        response = await es.search(index=index, sort=sort, from_=offset,
+                                   body=body, size=50000)
+    else:
+        response = await es.search(index=index, sort=sort, from_=offset,
+                                   size=limit, body=body)
+
     data = dict()
     data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']
