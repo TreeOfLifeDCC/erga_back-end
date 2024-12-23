@@ -4,10 +4,14 @@ import re
 from io import StringIO
 from typing import Optional, List
 from elasticsearch import AsyncElasticsearch, AIOHttpConnection
-from fastapi import FastAPI ,Response
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-
+import io
 import json
+from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, JSONResponse
+from elasticsearch.exceptions import ConnectionTimeout
+
 
 from .constants import DATA_PORTAL_AGGREGATIONS
 
@@ -31,9 +35,12 @@ app.add_middleware(
 )
 
 es = AsyncElasticsearch(
-    [ES_HOST], connection_class=AIOHttpConnection,
+    [ES_HOST],
+    timeout=120,
+    connection_class=AIOHttpConnection,
     http_auth=(ES_USERNAME, ES_PASSWORD),
-    use_ssl=True, verify_certs=False)
+    use_ssl=True, verify_certs=True)
+
 
 @app.get("/downloader_utility_data/")
 async def downloader_utility_data(taxonomy_filter: str, data_status: str, experiment_type: str, project_name: str):
@@ -151,12 +158,14 @@ async def downloader_utility_data_with_species(species_list: str, project_name: 
 
     return result
 
+
 @app.get("/summary")
 async def summary():
     response = await es.search(index="summary")
     data = dict()
     data['results'] = response['hits']['hits']
     return data
+
 
 def convert_to_title_case(input_string):
     # Add a space before each capital letter
@@ -168,132 +177,94 @@ def convert_to_title_case(input_string):
 
     return title_cased_string
 
-@app.get("/export-csv/")
-async def export_csv(
-        offset: int = 0,
-        limit: int = 15,
-        sort: str = "rank:desc",
-        filter: Optional[str] = None,
-        search: Optional[str] = None,
-        current_class: str = 'kingdom',
-        phylogeny_filters: Optional[str] = None
-):
-    """
-    Exports the current page of records from the specified Elasticsearch index
-    as a CSV file.
+
+class QueryParam(BaseModel):
+    pageIndex: int
+    pageSize: int
+    searchValue: str = ''
+    sortValue: str
+    filterValue: str = ''
+    currentClass: str
+    phylogenyFilters: str
+    indexName: str
+    downloadOption: str
 
 
-    :param offset: Starting index for pagination.
-    :param limit: Number of records to return.
-    :param sort: Sorting criteria (field and order).
-    :param filter: Comma-separated filters in the format 'field:value'.
-    :param search: Search query string.
-    :param current_class: Taxonomy class for filtering.
-    :param phylogeny_filters: Filters for phylogeny in the format 'name:value'.
-    :return: CSV file as a downloadable response.
-    """
+@app.post("/data-download")
+async def get_data_files(item: QueryParam):
+    data = await root(item.indexName, 0, item.pageSize,
+                      item.sortValue, item.filterValue,
+                      item.searchValue, item.currentClass,
+                      item.phylogenyFilters, 'download')
 
-    # Build the Elasticsearch query body
-    body = {
-        "aggs": {
-            aggregation_field: {"terms": {"field": aggregation_field}}
-            for aggregation_field in DATA_PORTAL_AGGREGATIONS
-        },
-        "aggs": {
-            "taxonomies": {
-                "nested": {"path": f"taxonomies.{current_class}"},
-                "aggs": {
-                    current_class: {
-                        "terms": {
-                            "field": f"taxonomies."
-                                     f"{current_class}.scientificName"}
-                    }
-                }
-            }
-        }
-    }
+    if 'results' in data:
+        csv_data = create_data_files_csv(data['results'], item.downloadOption,
+                                         item.indexName)
+        return StreamingResponse(
+            csv_data,
+            media_type='text/csv',
+            headers={"Content-Disposition": "attachment; filename=download.csv"}
+        )
+    else:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "There was an issue downloading the file"}
+        )
 
-    # Apply phylogeny filters
-    if phylogeny_filters:
-        body.setdefault("query", {"bool": {"filter": []}})
-        for phylogeny_filter in phylogeny_filters.split("-"):
-            name, value = phylogeny_filter.split(":")
-            body["query"]["bool"]["filter"].append({
-                "nested": {
-                    "path": f"taxonomies.{name}",
-                    "query": {"bool": {"filter": [{"term": {
-                        f"taxonomies.{name}.scientificName": value}}]}}
-                }
-            })
 
-    # Apply general filters
-    if filter:
-        body.setdefault("query", {"bool": {"filter": []}})
-        for filter_item in filter.split(","):
-            if current_class in filter_item:
-                _, value = filter_item.split(":")
-                body["query"]["bool"]["filter"].append({
-                    "nested": {
-                        "path": f"taxonomies.{current_class}",
-                        "query": {"bool": {"filter": [{"term": {
-                            f"taxonomies.{current_class}.scientificName": value}}]}}
-                    }
-                })
-            else:
-                filter_name, filter_value = filter_item.split(":")
-                body["query"]["bool"]["filter"].append(
-                    {"term": {filter_name: filter_value}})
 
-    # Apply search string
-    if search:
-        body.setdefault("query", {"bool": {"must": {"bool": {"should": []}}}})
-        body["query"]["bool"]["must"]["bool"]["should"].extend([
-            {"wildcard": {"organism": {"value": f"*{search}*",
-                                       "case_insensitive": True}}},
-            {"wildcard": {"commonName": {"value": f"*{search}*",
-                                         "case_insensitive": True}}},
-            {"wildcard": {
-                "symbionts_records.organism.text": {"value": f"*{search}*",
-                                                    "case_insensitive": True}}}
-        ])
 
-    # Perform the Elasticsearch search query
-    response = await es.search(index='data_portal', sort=sort, from_=offset,
-                               size=limit, body=body)
-    hits = response['hits']['hits']
+def create_data_files_csv(results, download_option, index_name):
+    header = []
+    if download_option.lower() == "metadata" and index_name in ['data_portal', 'data_portal_test']:
+        header = ['Organism', 'Common Name', 'Common Name Source',
+                  'Current Status']
+    elif download_option.lower() == "metadata" and index_name in ['tracking_status', 'tracking_status_index_test']:
+        header = ['Organism', 'Common Name', 'Metadata submitted to BioSamples',
+                  'Raw data submitted to ENA',
+                  'Mapped reads submitted to ENA',
+                  'Assemblies submitted to ENA',
+                  'Annotation complete', 'Annotation submitted to ENA']
 
-    if not hits:
-        return {"message": "No data found."}
+    output = io.StringIO()
+    csv_writer = csv.writer(output)
+    csv_writer.writerow(header)
 
-    # Define the columns and their title case versions
-    columns = {'organism', 'commonName', 'commonNameSource', 'currentStatus'}
-    title_case_columns = [convert_to_title_case(col) for col in columns]
+    for entry in results:
+        record = entry["_source"]
+        if download_option.lower() == "metadata" and index_name in ['data_portal', 'data_portal_test']:
+            organism = record.get('organism', '')
+            common_name = record.get('commonName', '')
+            common_name_source = record.get('commonNameSource', '')
+            current_status = record.get('currentStatus', '')
+            entry = [organism, common_name, common_name_source, current_status]
+            csv_writer.writerow(entry)
 
-    # Prepare CSV output
-    output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=title_case_columns)
-    writer.writeheader()
-
-    for hit in hits:
-        row = {convert_to_title_case(col): hit['_source'].get(col, '') for col
-               in columns}
-        writer.writerow(row)
+        elif download_option.lower() == "metadata" and index_name in ['tracking_status', 'tracking_status_index_test']:
+            organism = record.get('organism', '')
+            common_name = record.get('commonName', '')
+            metadata_biosamples = record.get('biosamples', '')
+            raw_data_ena = record.get('raw_data', '')
+            mapped_reads_ena = record.get('mapped_reads', '')
+            assemblies_ena = record.get('assemblies_status', '')
+            annotation_complete = record.get('annotation_complete', '')
+            annotation_submitted_ena = record.get('annotation_status', '')
+            entry = [organism, common_name, metadata_biosamples, raw_data_ena,
+                     mapped_reads_ena, assemblies_ena,
+                     annotation_complete, annotation_submitted_ena]
+            csv_writer.writerow(entry)
 
     output.seek(0)
+    return io.BytesIO(output.getvalue().encode('utf-8'))
 
-    headers = {
-        'Content-Disposition': 'attachment; filename="data_portal.csv"',
-        'Content-Type': 'text/csv'
-    }
-
-    return Response(content=output.getvalue(), media_type="text/csv",
-                    headers=headers)
 
 @app.get("/{index}")
 async def root(index: str, offset: int = 0, limit: int = 15,
                sort: str = "rank:desc", filter: str | None = None,
                search: str | None = None, current_class: str = 'kingdom',
                phylogeny_filters: str | None = None, action: str = None):
+    if index == 'favicon.ico':
+        return None
     print(phylogeny_filters)
     # data structure for ES query
     body = dict()
@@ -402,8 +373,11 @@ async def root(index: str, offset: int = 0, limit: int = 15,
     print(json.dumps(body))
 
     if action == 'download':
-        response = await es.search(index=index, sort=sort, from_=offset,
-                                   body=body, size=50000)
+        try:
+            response = await es.search(index=index, sort=sort, from_=offset,
+                                       body=body, size=10000)
+        except ConnectionTimeout:
+            return {"error": "Request to Elasticsearch timed out."}
     else:
         response = await es.search(index=index, sort=sort, from_=offset,
                                    size=limit, body=body)
