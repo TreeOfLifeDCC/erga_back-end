@@ -265,7 +265,7 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                phylogeny_filters: str | None = None, action: str = None):
     if index == 'favicon.ico':
         return None
-    print(phylogeny_filters)
+
     # data structure for ES query
     body = dict()
     # building aggregations for every request
@@ -274,6 +274,50 @@ async def root(index: str, offset: int = 0, limit: int = 15,
         body["aggs"][aggregation_field] = {
             "terms": {"field": aggregation_field, "size": 20}
         }
+
+        if 'data_portal' in index:
+            body["aggs"]["experiment"] = {
+                "nested": {"path": "experiment"},
+                "aggs": {
+                    "library_construction_protocol": {
+                        "terms": {
+                            "field": "experiment.library_construction_protocol.keyword",
+                            "size": 20
+                        },
+                        "aggs": {
+                            "distinct_docs": {
+                                "reverse_nested": {},  # get to the parent document level to count number of docs instead of
+                                # number of terms
+                                "aggs": {
+                                    "parent_doc_count": {
+                                        "cardinality": {
+                                            "field": "tax_id"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+    body["aggs"]["genome_notes"] = {
+        "nested": {"path": "genome_notes"},
+        "aggs": {
+            "genome_count": {
+                "reverse_nested": {},  # get to the parent document level
+                "aggs": {
+                    "distinct_docs": {
+                        "cardinality": {
+                            "field": "id"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
     body["aggs"]["taxonomies"] = {
         "nested": {"path": f"taxonomies.{current_class}"},
         "aggs": {current_class: {
@@ -342,11 +386,40 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                     }
                 )
                 body["query"]["bool"]["filter"].append(nested_dict)
+
             else:
                 filter_name, filter_value = filter_item.split(":")
-                body["query"]["bool"]["filter"].append(
-                    {"term": {filter_name: filter_value}}
-                )
+
+                if filter_name == 'experimentType':
+                    nested_dict = {
+                        "nested": {
+                            "path": "experiment",
+                            "query": {
+                                "bool": {
+                                    "filter": {
+                                        "term": {
+                                            "experiment"
+                                            ".library_construction_protocol"
+                                            ".keyword": filter_value
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    body["query"]["bool"]["filter"].append(nested_dict)
+                elif filter_name == 'genome_notes':
+                    nested_dict = {
+                        'nested': {'path': 'genome_notes', 'query': {
+                            'bool': {
+                                'must': [
+                                    {'exists': {
+                                        'field': 'genome_notes.url'}}]}}}}
+                    body["query"]["bool"]["filter"].append(nested_dict)
+                else:
+                    body["query"]["bool"]["filter"].append(
+                        {"term": {filter_name: filter_value}})
+
 
     # adding search string
     if search:
