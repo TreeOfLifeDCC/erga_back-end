@@ -1,19 +1,15 @@
 import csv
 import os
 import re
-from io import StringIO
-from typing import Optional, List
 from elasticsearch import AsyncElasticsearch, AIOHttpConnection
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import json
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse, JSONResponse
 from elasticsearch.exceptions import ConnectionTimeout
-
-
-from .constants import DATA_PORTAL_AGGREGATIONS
+from .constants import DATA_PORTAL_AGGREGATIONS, ARTICLES_AGGREGATIONS
 
 app = FastAPI()
 
@@ -200,6 +196,7 @@ async def get_data_files(item: QueryParam):
     if 'results' in data:
         csv_data = create_data_files_csv(data['results'], item.downloadOption,
                                          item.indexName)
+
         return StreamingResponse(
             csv_data,
             media_type='text/csv',
@@ -210,8 +207,6 @@ async def get_data_files(item: QueryParam):
             status_code=500,
             content={"error": "There was an issue downloading the file"}
         )
-
-
 
 
 def create_data_files_csv(results, download_option, index_name):
@@ -260,7 +255,7 @@ def create_data_files_csv(results, download_option, index_name):
 
 @app.get("/{index}")
 async def root(index: str, offset: int = 0, limit: int = 15,
-               sort: str = "rank:desc", filter: str | None = None,
+               sort: str | None = None, filter: str | None = None,
                search: str | None = None, current_class: str = 'kingdom',
                phylogeny_filters: str | None = None, action: str = None):
     if index == 'favicon.ico':
@@ -270,11 +265,15 @@ async def root(index: str, offset: int = 0, limit: int = 15,
     body = dict()
     # building aggregations for every request
     body["aggs"] = dict()
-    for aggregation_field in DATA_PORTAL_AGGREGATIONS:
+    if 'articles' in index:
+        aggregations_list = ARTICLES_AGGREGATIONS
+    else:
+        aggregations_list = DATA_PORTAL_AGGREGATIONS
+
+    for aggregation_field in aggregations_list:
         body["aggs"][aggregation_field] = {
             "terms": {"field": aggregation_field, "size": 20}
         }
-
         if 'data_portal' in index:
             body["aggs"]["experiment"] = {
                 "nested": {"path": "experiment"},
@@ -286,7 +285,8 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                         },
                         "aggs": {
                             "distinct_docs": {
-                                "reverse_nested": {},  # get to the parent document level to count number of docs instead of
+                                "reverse_nested": {},
+                                # get to the parent document level to count number of docs instead of
                                 # number of terms
                                 "aggs": {
                                     "parent_doc_count": {
@@ -301,61 +301,62 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                 }
             }
 
-    body["aggs"]["genome_notes"] = {
-        "nested": {"path": "genome_notes"},
-        "aggs": {
-            "genome_count": {
-                "reverse_nested": {},  # get to the parent document level
-                "aggs": {
-                    "distinct_docs": {
-                        "cardinality": {
-                            "field": "id"
+    if 'data_portal' in index or 'tracking_status' in index:
+        body["aggs"]["genome_notes"] = {
+            "nested": {"path": "genome_notes"},
+            "aggs": {
+                "genome_count": {
+                    "reverse_nested": {},  # get to the parent document level
+                    "aggs": {
+                        "distinct_docs": {
+                            "cardinality": {
+                                "field": "id"
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-
-    body["aggs"]["taxonomies"] = {
-        "nested": {"path": f"taxonomies.{current_class}"},
-        "aggs": {current_class: {
-            "terms": {
-                "field": f"taxonomies.{current_class}.scientificName"
+        body["aggs"]["taxonomies"] = {
+            "nested": {"path": f"taxonomies.{current_class}"},
+            "aggs": {current_class: {
+                "terms": {
+                    "field": f"taxonomies.{current_class}.scientificName"
+                }
+            }
             }
         }
-        }
-    }
 
-    if phylogeny_filters:
-        body["query"] = {
-            "bool": {
-                "filter": list()
+        if phylogeny_filters:
+            body["query"] = {
+                "bool": {
+                    "filter": list()
+                }
             }
-        }
-        phylogeny_filters = phylogeny_filters.split("-")
-        print(phylogeny_filters)
-        for phylogeny_filter in phylogeny_filters:
-            name, value = phylogeny_filter.split(":")
-            nested_dict = {
-                "nested": {
-                    "path": f"taxonomies.{name}",
-                    "query": {
-                        "bool": {
-                            "filter": list()
+            phylogeny_filters = phylogeny_filters.split("-")
+            print(phylogeny_filters)
+            for phylogeny_filter in phylogeny_filters:
+                name, value = phylogeny_filter.split(":")
+                nested_dict = {
+                    "nested": {
+                        "path": f"taxonomies.{name}",
+                        "query": {
+                            "bool": {
+                                "filter": list()
+                            }
                         }
                     }
                 }
-            }
-            nested_dict["nested"]["query"]["bool"]["filter"].append(
-                {
-                    "term": {
-                        f"taxonomies.{name}.scientificName": value
+                nested_dict["nested"]["query"]["bool"]["filter"].append(
+                    {
+                        "term": {
+                            f"taxonomies.{name}.scientificName": value
+                        }
                     }
-                }
-            )
-            body["query"]["bool"]["filter"].append(nested_dict)
+                )
+                body["query"]["bool"]["filter"].append(nested_dict)
+
     # adding filters, format: filter_name1:filter_value1, etc...
     if filter:
         filters = filter.split(",")
@@ -420,29 +421,29 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                     body["query"]["bool"]["filter"].append(
                         {"term": {filter_name: filter_value}})
 
-
-    # adding search string
+    # Adding search string
     if search:
-        # body already has filter parameters
-        if "query" in body:
-            # body["query"]["bool"].update({"should": []})
-            body["query"]["bool"].update({"must": {}})
+        if "query" not in body:
+            body["query"] = {"bool": {"must": {"bool": {"should": []}}}}
         else:
-            # body["query"] = {"bool": {"should": []}}
-            body["query"] = {"bool": {"must": {}}}
-        body["query"]["bool"]["must"] = {"bool": {"should": []}}
-        body["query"]["bool"]["must"]["bool"]["should"].append(
-            {"wildcard": {"organism": {"value": f"*{search}*",
-                                       "case_insensitive": True}}}
+            body["query"]["bool"].setdefault("must", {"bool": {"should": []}})
+
+        search_fields = (
+            ["title", "journal_name", "study_id", "organism_name"]
+            if 'articles' in index
+            else ["organism", "commonName", "symbionts_records.organism.text"]
         )
-        body["query"]["bool"]["must"]["bool"]["should"].append(
-            {"wildcard": {"commonName": {"value": f"*{search}*",
-                                         "case_insensitive": True}}}
-        )
-        body["query"]["bool"]["must"]["bool"]["should"].append(
-            {"wildcard": {"symbionts_records.organism.text": {"value": f"*{search}*",
-                                                              "case_insensitive": True}}}
-        )
+
+        for field in search_fields:
+            body["query"]["bool"]["must"]["bool"]["should"].append({
+                "wildcard": {
+                    field: {
+                        "value": f"*{search}*",
+                        "case_insensitive": True
+                    }
+                }
+            })
+
     print(json.dumps(body))
 
     if action == 'download':
