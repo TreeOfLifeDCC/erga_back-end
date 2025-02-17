@@ -335,7 +335,6 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                 }
             }
             phylogeny_filters = phylogeny_filters.split("-")
-            print(phylogeny_filters)
             for phylogeny_filter in phylogeny_filters:
                 name, value = phylogeny_filter.split(":")
                 nested_dict = {
@@ -444,8 +443,6 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                 }
             })
 
-    print(json.dumps(body))
-
     if action == 'download':
         try:
             response = await es.search(index=index, sort=sort, from_=offset,
@@ -466,12 +463,11 @@ async def root(index: str, offset: int = 0, limit: int = 15,
 @app.get("/{index}/{record_id}")
 async def details(index: str, record_id: str):
     body = dict()
-    if index == 'data_portal':
+    response = await es.search(index=index, q=f"_id:{record_id}")
+    if len(response['hits']['hits']) == 0:
         body["query"] = {
             "bool": {"filter": [{'term': {'organism': record_id}}]}}
         response = await es.search(index=index, body=body)
-    else:
-        response = await es.search(index=index, q=f"_id:{record_id}")
     data = dict()
     data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']
