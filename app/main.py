@@ -188,16 +188,23 @@ class QueryParam(BaseModel):
 
 @app.post("/data-download")
 async def get_data_files(item: QueryParam):
+
     data = await fetch_data_in_batches(item)
-    csv_data = create_data_files_csv(data, item.downloadOption,
+
+    if len(data) > 0 :
+        csv_data = create_data_files_csv(data, item.downloadOption,
                                          item.index_name)
 
-    return StreamingResponse(
-        csv_data,
-        media_type='text/csv',
-        headers={"Content-Disposition": "attachment; filename=download.csv"}
-    )
-
+        return StreamingResponse(
+            csv_data,
+            media_type='text/csv',
+            headers={"Content-Disposition": "attachment; filename=download.csv"}
+        )
+    else:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "There was an issue downloading the file"}
+        )
 
 
 def create_data_files_csv(results, download_option, index_name):
