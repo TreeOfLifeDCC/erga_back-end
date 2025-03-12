@@ -215,7 +215,6 @@ def create_data_files_csv(results, download_option, index_name):
     output = io.StringIO()
     csv_writer = csv.writer(output)
     csv_writer.writerow(header)
-    print(len(results))
     for entry in results:
         record = entry["_source"]
         if download_option.lower() == "metadata" and index_name in ['data_portal', 'data_portal_test']:
