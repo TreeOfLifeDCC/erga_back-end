@@ -146,8 +146,20 @@ async def downloader_utility_data_with_species(species_list: str, project_name: 
     if species_list != '' and species_list is not None:
         species_list_array = species_list.split(",")
         for organism in species_list_array:
-            body["query"] = {
-                "bool": {"filter": [{'term': {'_id': organism}}, {'term': {'project_name': project_name}}]}}
+            body = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"project_name": project_name}}
+                        ],
+                        "should": [
+                            {"term": {"_id": organism}},
+                            {"term": {"organism": organism}}
+                        ],
+                        "minimum_should_match": 1
+                    }
+                }
+            }
             response = await es.search(index='data_portal',
                                        body=body)
             result.extend(response['hits']['hits'])
