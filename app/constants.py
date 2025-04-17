@@ -5,3 +5,6 @@ DATA_PORTAL_AGGREGATIONS = [
 
 
 ARTICLES_AGGREGATIONS = ["pubYear", "journalTitle", "articleType"]
+
+PHYLOGENETIC_RANKS = (
+        'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')

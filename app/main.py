@@ -9,7 +9,8 @@ import json
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse, JSONResponse
 from elasticsearch.exceptions import ConnectionTimeout
-from .constants import DATA_PORTAL_AGGREGATIONS, ARTICLES_AGGREGATIONS
+from .constants import DATA_PORTAL_AGGREGATIONS, ARTICLES_AGGREGATIONS, PHYLOGENETIC_RANKS
+
 
 app = FastAPI()
 
@@ -49,24 +50,35 @@ async def downloader_utility_data(taxonomy_filter: str, data_status: str, experi
                     "filter": list()
                 }
             }
-            nested_dict = {
-                "nested": {
-                    "path": "taxonomies.class",
-                    "query": {
-                        "bool": {
-                            "filter": list()
+
+            nested_queries = []
+            for rank in PHYLOGENETIC_RANKS:
+                nested_query = {
+                    "nested": {
+                        "path": f"taxonomies.{rank}",
+                        "query": {
+                            "bool": {
+                                "filter": [
+                                    {
+                                        "term": {
+                                            f"taxonomies.{rank}.scientificName": taxonomy_filter
+                                        }
+                                    }
+                                ]
+                            }
                         }
                     }
                 }
-            }
-            nested_dict["nested"]["query"]["bool"]["filter"].append(
-                {
-                    "term": {
-                        "taxonomies.class.scientificName": taxonomy_filter
-                    }
+                nested_queries.append(nested_query)
+            final_query = {
+                "bool": {
+                    "should": nested_queries,
+                    "minimum_should_match": 1  # Adjust depending on your logic
                 }
-            )
-            body["query"]["bool"]["filter"].append(nested_dict)
+            }
+
+
+            body["query"]["bool"]["filter"].append(final_query)
 
     if data_status is not None and data_status != '':
         split_array = data_status.split("-")
@@ -126,7 +138,7 @@ async def downloader_utility_data(taxonomy_filter: str, data_status: str, experi
     if project_name is not None and project_name != '':
         body["query"]["bool"]["filter"].append(
             {"term": {'project_name': project_name}})
-    print(body)
+
     response = await es.search(index="data_portal", from_=0, size=10000, body=body)
     total_count = response['hits']['total']['value']
     result = response['hits']['hits']
