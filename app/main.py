@@ -565,7 +565,7 @@ async def details(index: str, record_id: str):
     data = dict()
     data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']
-    if 'data_portal' in index:
+    if 'data_portal_test' in index:
         data['aggregations'] = aggregations
     return data
 
