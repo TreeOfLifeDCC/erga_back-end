@@ -484,7 +484,7 @@ async def root(index: str, offset: int = 0, limit: int = 15,
 @app.get("/{index}/{record_id}")
 async def details(index: str, record_id: str):
     body = dict()
-    if 'data_portal_test' in index:
+    if 'data_portal' in index:
         body["query"] = {
             "bool": {
                 "filter": [
@@ -565,7 +565,7 @@ async def details(index: str, record_id: str):
     data = dict()
     data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']
-    if 'data_portal_test' in index:
+    if 'data_portal' in index:
         data['aggregations'] = aggregations
     return data
 
