@@ -5,7 +5,7 @@ from elasticsearch import AsyncElasticsearch, AIOHttpConnection
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import io
-import json
+
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse, JSONResponse
 from elasticsearch.exceptions import ConnectionTimeout
@@ -475,10 +475,14 @@ async def root(index: str, offset: int = 0, limit: int = 15,
                                    size=limit, body=body)
 
     data = dict()
-    data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']
     data['aggregations'] = response['aggregations']
+    if 'articles' in index:
+        data['count'] = response['hits']['total']['value']
+    else:
+        data['count'] = data['aggregations']['biosamples']['buckets'][0]['doc_count']
     return data
+
 
 
 @app.get("/{index}/{record_id}")
