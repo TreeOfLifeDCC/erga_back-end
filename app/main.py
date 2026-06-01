@@ -2,7 +2,7 @@ import csv
 import os
 import re
 from elasticsearch import AsyncElasticsearch, AIOHttpConnection
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 import io
 
@@ -12,7 +12,19 @@ from elasticsearch.exceptions import ConnectionTimeout
 from .constants import DATA_PORTAL_AGGREGATIONS, ARTICLES_AGGREGATIONS, PHYLOGENETIC_RANKS
 
 
-app = FastAPI()
+# The app sits behind a Google Cloud Load Balancer that path-routes /api/* to
+# this service WITHOUT stripping the prefix, so every route (and the docs) must
+# live under /api. Point the docs/openapi URLs at /api so they stay reachable
+# through the LB. Do NOT use uvicorn --root-path here: that is for proxies that
+# strip the prefix and would double-prefix these URLs.
+app = FastAPI(
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
+
+# All routes are registered on this router; including it applies the /api prefix.
+router = APIRouter(prefix="/api")
 
 origins = [
     "*"
@@ -39,7 +51,7 @@ es = AsyncElasticsearch(
     use_ssl=True, verify_certs=True)
 
 
-@app.get("/downloader_utility_data/")
+@router.get("/downloader_utility_data/")
 async def downloader_utility_data(taxonomy_filter: str, data_status: str, experiment_type: str, project_name: str):
     body = dict()
     if taxonomy_filter != '':
@@ -151,7 +163,7 @@ async def downloader_utility_data(taxonomy_filter: str, data_status: str, experi
     return result
 
 
-@app.get("/downloader_utility_data_with_species/")
+@router.get("/downloader_utility_data_with_species/")
 async def downloader_utility_data_with_species(species_list: str, project_name: str):
     body = dict()
     result = []
@@ -179,7 +191,7 @@ async def downloader_utility_data_with_species(species_list: str, project_name: 
     return result
 
 
-@app.get("/summary")
+@router.get("/summary")
 async def summary():
     response = await es.search(index="summary")
     data = dict()
@@ -210,7 +222,7 @@ class QueryParam(BaseModel):
     downloadOption: str
 
 
-@app.post("/data-download")
+@router.post("/data-download")
 async def get_data_files(item: QueryParam):
 
     data = await fetch_data_in_batches(item)
@@ -274,7 +286,7 @@ def create_data_files_csv(results, download_option, index_name):
     return io.BytesIO(output.getvalue().encode('utf-8'))
 
 
-@app.get("/{index}")
+@router.get("/{index}")
 async def root(index: str, offset: int = 0, limit: int = 15,
                sort: str | None = None, filter: str | None = None,
                search: str | None = None, current_class: str = 'kingdom',
@@ -485,7 +497,7 @@ async def root(index: str, offset: int = 0, limit: int = 15,
 
 
 
-@app.get("/{index}/{record_id}")
+@router.get("/{index}/{record_id}")
 async def details(index: str, record_id: str):
     body = dict()
     if 'data_portal' in index:
@@ -599,3 +611,8 @@ async def fetch_data_in_batches(item: QueryParam):
         print(f"Fetched {len(results)} results, total: {len(all_data)}")
 
     return all_data
+
+
+# Register all routes under the /api prefix. Must come after every @router
+# decorator above so the router is fully populated when it is included.
+app.include_router(router)
