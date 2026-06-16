@@ -2,14 +2,19 @@ import csv
 import os
 import re
 from elasticsearch import AsyncElasticsearch, AIOHttpConnection
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import io
 
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse, JSONResponse
 from elasticsearch.exceptions import ConnectionTimeout
-from .constants import DATA_PORTAL_AGGREGATIONS, ARTICLES_AGGREGATIONS, PHYLOGENETIC_RANKS
+from .constants import (
+    DATA_PORTAL_AGGREGATIONS,
+    ARTICLES_AGGREGATIONS,
+    PHYLOGENETIC_RANKS,
+    ALLOWED_INDICES,
+)
 
 
 # The app sits behind a Google Cloud Load Balancer that path-routes /api/* to
@@ -49,6 +54,16 @@ es = AsyncElasticsearch(
     connection_class=AIOHttpConnection,
     http_auth=(ES_USERNAME, ES_PASSWORD),
     use_ssl=True, verify_certs=True)
+
+
+def validate_index(index: str) -> str:
+    """Constrain the user-supplied `index` path segment to a known set of
+    indices before it reaches es.search(index=...). Without this, the index
+    name is fully attacker-controlled and can target any index in the cluster.
+    """
+    if index not in ALLOWED_INDICES:
+        raise HTTPException(status_code=404, detail="Not found")
+    return index
 
 
 @router.get("/downloader_utility_data/")
@@ -294,6 +309,8 @@ async def root(index: str, offset: int = 0, limit: int = 15,
     if index == 'favicon.ico':
         return None
 
+    validate_index(index)
+
     # data structure for ES query
     body = dict()
     # building aggregations for every request
@@ -499,6 +516,7 @@ async def root(index: str, offset: int = 0, limit: int = 15,
 
 @router.get("/{index}/{record_id}")
 async def details(index: str, record_id: str):
+    validate_index(index)
     body = dict()
     if 'data_portal' in index:
         body["query"] = {
@@ -577,7 +595,11 @@ async def details(index: str, record_id: str):
         response = await es.search(index=index, body=body)
         aggregations = response['aggregations']
     else:
-        response = await es.search(index=index, q=f"_id:{record_id}")
+        # Parameterized term query — never interpolate record_id into a Lucene
+        # query string (`q=...`), which would allow query-syntax injection.
+        response = await es.search(
+            index=index,
+            body={"query": {"term": {"_id": record_id}}})
     data = dict()
     data['count'] = response['hits']['total']['value']
     data['results'] = response['hits']['hits']

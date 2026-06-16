@@ -7,5 +7,17 @@ DATA_PORTAL_AGGREGATIONS = [
 
 ARTICLES_AGGREGATIONS = ["pubYear", "journalTitle", "articleType"]
 
+# Explicit allowlist of indices the public API may target. The `index` value
+# comes straight from the URL path, so without this gate a caller could point
+# the credentialed ES client at any index in the cluster (wildcards, _all,
+# other apps' indices). Keep the substring-based branching in main.py — these
+# are the only concrete index names that branching is allowed to resolve to.
+ALLOWED_INDICES = frozenset({
+    "data_portal", "data_portal_test",
+    "tracking_status", "tracking_status_index_test",
+    "articles", "articles_test",
+    "summary",
+})
+
 PHYLOGENETIC_RANKS = (
         'kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
