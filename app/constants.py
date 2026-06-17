@@ -17,6 +17,7 @@ ALLOWED_INDICES = frozenset({
     "tracking_status", "tracking_status_index_test",
     "articles", "articles_test",
     "summary",
+    "nbn_atlas", "tol_qc",
 })
 
 PHYLOGENETIC_RANKS = (
