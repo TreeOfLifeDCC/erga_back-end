@@ -18,6 +18,7 @@ ALLOWED_INDICES = frozenset({
     "articles", "articles_test",
     "summary",
     "nbn_atlas", "tol_qc",
+    "images",
 })
 
 PHYLOGENETIC_RANKS = (
