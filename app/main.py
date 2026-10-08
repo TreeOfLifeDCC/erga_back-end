@@ -509,7 +509,8 @@ async def root(index: str, offset: int = 0, limit: int = 15,
     if 'articles' in index:
         data['count'] = response['hits']['total']['value']
     else:
-        data['count'] = data['aggregations']['biosamples']['buckets'][0]['doc_count']
+        buckets = data['aggregations']['biosamples']['buckets']
+        data['count'] = buckets[0]['doc_count'] if buckets else 0
     return data
 
 
