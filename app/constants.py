@@ -16,7 +16,7 @@ ALLOWED_INDICES = frozenset({
     "data_portal", "data_portal_test",
     "tracking_status", "tracking_status_index_test",
     "articles", "articles_test",
-    "summary",
+    "summary",  "summary_test",
     "nbn_atlas", "tol_qc",
     "images",
 })
